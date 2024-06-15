@@ -1,4 +1,5 @@
 use crate::{BulkString, RespArray, RespEncode, RespFrame, RespMap, RespNull, RespNullArray, RespSet, SimpleError, SimpleString};
+
 /*
 - 如何解析 Frame
     - simple string: "+OK\r\n"
@@ -18,11 +19,11 @@ use crate::{BulkString, RespArray, RespEncode, RespFrame, RespMap, RespNull, Res
  */
 const BUF_CAP: usize = 4096;
 
-impl RespEncode for RespFrame {
-    fn encode(self) -> Vec<u8> {
-        todo!()
-    }
-}
+// impl RespEncode for RespFrame {
+//     fn encode(self) -> Vec<u8> {
+//         todo!()
+//     }
+// }
 
 //- simple string:"+OK\r\n"
 impl RespEncode for SimpleString {
@@ -131,4 +132,10 @@ impl RespEncode for RespSet{
         }
         buf
     }
+}
+#[cfg(test)]
+mod tests{
+    // use super::*;
+    // #[test]
+
 }

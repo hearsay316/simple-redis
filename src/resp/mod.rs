@@ -5,7 +5,7 @@ use std::ops::Deref;
 
 mod encode;
 mod decode;
-
+use enum_dispatch::enum_dispatch;
 use encode::*;
 use decode::*;
 /*
@@ -25,6 +25,7 @@ use decode::*;
     - map: "%<number-of-entries>\r\n<key-1><value-1>...<key-n><value-n>"
     - set: "~<number-of-elements>\r\n<element-1>...<element-n>"
  */
+#[enum_dispatch]
 pub trait RespEncode {
     fn encode(self) -> Vec<u8>;
 }
@@ -38,7 +39,7 @@ impl RespDecode for BytesMut {
         todo!()
     }
 }
-
+#[enum_dispatch(RespEncode)]
 pub enum RespFrame {
     SimpleString(SimpleString),
     Error(SimpleError),
