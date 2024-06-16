@@ -81,7 +81,7 @@ impl RespEncode for RespArray {
     fn encode(self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(BUF_CAP);
         buf.extend_from_slice(&format!("*{}\r\n", self.len()).into_bytes());
-        for frame in self {
+        for frame in self.0 {
             buf.extend_from_slice(&frame.encode());
         }
         buf

@@ -107,7 +107,7 @@ impl Deref for RespMap {
 
 impl Deref for RespSet {
     type Target = HashSet<RespFrame>;
-    fn deref(&self) -> &Self::Targe {
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
