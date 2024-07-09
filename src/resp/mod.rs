@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use anyhow::Result;
+use thiserror::Error;
 use bytes::BytesMut;
 use std::ops::{Deref, DerefMut};
+
 use enum_dispatch::enum_dispatch;
 mod encode;
 mod decode;
@@ -29,15 +30,28 @@ pub trait RespEncode {
     fn encode(self) -> Vec<u8>;
 }
 
-pub trait RespDecode {
-    fn decode(buf: Self) -> Result<RespFrame, String>;
+pub trait RespDecode : Sized {
+    fn decode(buf:&mut BytesMut) -> Result<Self,RespError>;
 }
 
-impl RespDecode for BytesMut {
-    fn decode(buf: Self) -> Result<RespFrame, String> {
-        todo!()
-    }
+#[derive(Debug,Error,PartialEq, Eq,)]
+pub enum RespError{
+    #[error("Invalid frame : {0}")]
+    InvalidFrame(String),
+    #[error("invalid Frame Type: {0}")]
+    InvalidFrameType(String),
+    #[error("Invalid frame length : {0}")]
+    InvalidFrameLength(isize),
+    #[error("Frame is not complete")]
+    NotComplete
 }
+
+
+// impl RespDecode for BytesMut {
+//     fn decode(buf:&mut  BytesMut) -> Result<Self, RespError> {
+//         todo!()
+//     }
+// }
 #[enum_dispatch(RespEncode)]
 #[derive(Debug, PartialEq, PartialOrd)]
 pub enum RespFrame {
