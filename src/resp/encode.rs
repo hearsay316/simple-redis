@@ -1,4 +1,4 @@
-use crate::{BulkString, RespArray, RespEncode, RespFrame, RespMap, RespNull, RespNullArray, RespSet, SimpleError, SimpleString};
+use crate::{BulkString, RespArray, RespEncode, RespFrame, RespMap, RespNull, RespNullArray, RespNullBulkString, RespSet, SimpleError, SimpleString};
 
 /*
 - 如何解析 Frame
@@ -45,8 +45,13 @@ impl RespEncode for BulkString {
         // format!("${}\r\n{}\r\n",self.len(),String::from_utf8_lossy(&self)).into_bytes()
     }
 }
-
 // - null bulk string: "$-1\r\n"
+impl RespEncode for RespNullBulkString {
+    fn encode(self) -> Vec<u8> {
+        b"$-1\r\n".to_vec()
+    }
+}
+// - null: "_\r\n"
 impl RespEncode for RespNull {
     fn encode(self) -> Vec<u8> {
         b"_\r\n".to_vec()
@@ -157,6 +162,11 @@ mod tests {
     fn test_bulk_string_encode(){
         let frame:RespFrame = BulkString::new("OK".to_string()).into();
         assert_eq!(frame.encode(),b"$2\r\nOK\r\n");
+    }
+    #[test]
+    fn test_null_bulk_string_encode() {
+        let frame: RespFrame = RespNullBulkString.into();
+        assert_eq!(frame.encode(), b"$-1\r\n");
     }
     #[test]
     fn test_array_encode(){

@@ -1,10 +1,39 @@
+use std::collections::BTreeMap;
+use crate::{BulkString, RespArray, RespDecode, RespEncode, RespError, RespFrame, RespMap, RespNull, RespNullArray, RespNullBulkString, RespSet, SimpleError, SimpleString};
+use bytes::{Buf, BytesMut};
 
-use crate::{RespArray, RespDecode, RespError, RespFrame, SimpleError, SimpleString};
-use bytes::BytesMut;
+/*
+- 如何解析 Frame
+    - simple string: "+OK\r\n"
+    - error: "-Error message\r\n"
+    - bulk error: "!<length>\r\n<error>\r\n"
+    - integer: ":[<+|->]<value>\r\n"
+    - bulk string: "$<length>\r\n<data>\r\n"
+    - null bulk string: "$-1\r\n"
+    - array: "*<number-of-elements>\r\n<element-1>...<element-n>"
+        - "*2\r\n$3\r\nget\r\n$5\r\nhello\r\n"
+    - null array: "*-1\r\n"
+    - null: "_\r\n"
+    - boolean: "#<t|f>\r\n"
+    - double: ",[<+|->]<integral>[.<fractional>][<E|e>[sign]<exponent>]\r\n"
+    - map: "%<number-of-entries>\r\n<key-1><value-1>...<key-n><value-n>"
+    - set: "~<number-of-elements>\r\n<element-1>...<element-n>"
+ */
 const CRLF: &[u8] = b"\r\n";
 const CRLF_LEN: usize = CRLF.len();
+impl RespDecode for RespFrame {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let mut iter = buf.iter().peekable();
+        match iter.peek() {
+            Some(b'+') => {}
+            _ => {
+                todo!()
+            }
+        }
+    }
+}
 impl RespDecode for SimpleString {
-    fn decode( buf: &mut BytesMut) -> Result<Self, RespError> {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
         if buf.len() < 3 {
             return Err(RespError::NotComplete);
         }
@@ -13,12 +42,12 @@ impl RespDecode for SimpleString {
         }
         // 搜索 "\r\n"
         let mut end = 0;
-         for i in 1..buf.len() - 1 {
-             if buf[i] ==b'\r'&&buf[i+1] == b'\n' {
-                 end = i;
-                 break;
-             }
-         }
+        for i in 1..buf.len() - 1 {
+            if buf[i] == b'\r' && buf[i + 1] == b'\n' {
+                end = i;
+                break;
+            }
+        }
         if end == 0 {
             return Err(RespError::NotComplete);
         }
@@ -38,12 +67,12 @@ impl RespDecode for SimpleError {
         }
         // 搜索 "\r\n"
         let mut end = 0;
-         for i in 1..buf.len() - 1 {
-             if buf[i] ==b'\r'&&buf[i+1] == b'\n' {
-                 end = i;
-                 break;
-             }
-         }
+        for i in 1..buf.len() - 1 {
+            if buf[i] == b'\r' && buf[i + 1] == b'\n' {
+                end = i;
+                break;
+            }
+        }
         if end == 0 {
             return Err(RespError::NotComplete);
         }
@@ -53,13 +82,141 @@ impl RespDecode for SimpleError {
         Ok(SimpleError::new(s.to_string()))
     }
 }
-impl RespDecode for RespArray{
-    fn decode(buf:&mut BytesMut)->Result<Self,RespError>{
-        if buf.len() < 3 {
-            return Err(RespError::NotComplete);
-        }
+impl RespDecode for RespNull {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let prefix = "_";
+        extract_fixed_data(buf, "_\r\n", "Null")?;
+        Ok(RespNull)
+    }
+}
+impl RespDecode for RespNullArray {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let prefix = "*";
+        extract_fixed_data(buf, "*-1\r\n", "NullArray")?;
+        Ok(RespNullArray)
+    }
+}
+impl RespDecode for RespNullBulkString {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let prefix = "$-1\r\n";
+        extract_fixed_data(buf, "$-1\r\n", "NullBulkString")?;
+        Ok(RespNullBulkString)
     }
 
+}
+impl RespDecode for bool {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        match extract_fixed_data(buf, "#t\r\n", "Bool") {
+            Ok(_) => Ok(true),
+            Err(RespError::NotComplete) => Err(RespError::NotComplete),
+            Err(_) => match extract_fixed_data(buf, "#f\r\n", "Bool") {
+                Ok(_) => Ok(true),
+                Err(e) => Err(e)
+            }
+        }
+    }
+}
+impl RespDecode for BulkString {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let prefix = "$";
+        let end = extract_simple_frame_data(buf, prefix, 1)?;
+        let s = String::from_utf8_lossy(&buf[prefix.len()..end]);
+        let len = s.parse()?;
+        let remained = &buf[end + CRLF_LEN..];
+        if remained.len() < len + CRLF_LEN {
+            return Err(RespError::NotComplete);
+        }
+        buf.advance(end + CRLF_LEN);
+        let data = buf.split_to(len + CRLF_LEN);
+        Ok(BulkString::new(data[..len].to_vec()))
+    }
+}
+
+impl RespDecode for RespArray {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let perfix = "+";
+        let end = extract_simple_frame_data(buf, perfix, 1)?;
+        let s = String::from_utf8_lossy(&buf[perfix.len()..end]);
+        let len = s.parse()?;
+        let mut frames = Vec::with_capactity(len);
+        for _ in 0..len {
+            let frame = RespFrame::decode(buf)?;
+            frames.push(frame);
+        }
+        Ok(RespArray::new(frames))
+    }
+}
+//  - double: ",[<+|->]<integral>[.<fractional>][<E|e>[sign]<exponent>]\r\n"
+impl RespDecode for i64 {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let prefix = ":";
+        let end = extract_simple_frame_data(buf, prefix, 1)?;
+        // split the buffer
+        let data = buf.split_to(end + CRLF_LEN);
+        let s = String::from_utf8_lossy(&data[prefix.len()..end]);
+        Ok(s.parse()?)
+    }
+}
+impl RespDecode for f64 {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let prefix = ",";
+        let end = extract_simple_frame_data(buf, prefix, 1)?;
+        println!("{:?}", buf);
+        let data = buf.split_to(end + CRLF_LEN);
+        // println!("{:?}",data);
+        let s = String::from_utf8_lossy(&data[prefix.len()..end]);
+        Ok(s.parse()?)
+    }
+}
+//"%<number-of-entries>\r\n<key-1><value-1>...<key-n><value-n>"
+impl RespDecode for RespMap {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let prefix = "%";
+        let end = extract_simple_frame_data(buf, prefix, 1)?;
+        let s = String::from_utf8_lossy(&buf[prefix.len()..end]);
+        let len = s.parse()?;
+        let mut frames = RespMap::new();
+        for _ in len {
+            let key = SimpleString::decode(buf)?;
+            let value = RespFrame::decode(buf)?;
+            frames.insert(key.0, value);
+        }
+        Ok(frames)
+    }
+}
+// set: "~<number-of-elements>\r\n<element-1>...<element-n>"
+impl RespDecode for RespSet {
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let prefix = "~";
+        let end = extract_simple_frame_data(buf, prefix, 1)?;
+        let s = String::from_utf8_lossy(&buf[prefix.len()..end]);
+        let len = s.parse()?;
+        let mut frames: Vec<RespFrame> = Vec::with_capacity(len);
+        for _ in len {
+            let frame = RespFrame::decode(buf)?;
+            frames.push(frame);
+        }
+        Ok(RespSet::new(frames))
+    }
+}
+fn extract_fixed_data(
+    buf: &mut BytesMut,
+    expect: &str,
+    expect_type: &str,
+) -> Result<(), RespError> {
+    if buf.len() < expect.len() {
+        return Err(RespError::NotComplete);
+    }
+
+    if !buf.starts_with(expect.as_bytes()) {
+        return Err(RespError::InvalidFrameType(format!(
+            "expect: {}, got: {:?}",
+            expect_type, buf
+        )));
+    }
+
+    buf.advance(expect.len());
+    Ok(())
 }
 /**
  * 从给定的字节缓冲区中提取简单帧数据。
@@ -71,7 +228,7 @@ impl RespDecode for RespArray{
  * @param prefix 预期的帧前缀，用于识别帧类型。
  * @return 返回简单字符串帧的结束位置索引，如果帧不完整或类型不匹配，则返回错误。
  */
-fn extract_simple_frame_data(buf: &[u8], prefix: &str) -> Result<usize, RespError> {
+fn extract_simple_frame_data(buf: &[u8], prefix: &str, nth_crlf: usize) -> Result<usize, RespError> {
     // 检查缓冲区长度是否小于3，即至少应包含前缀和CRLF
     if buf.len() < 3 {
         return Err(RespError::NotComplete);
@@ -86,7 +243,7 @@ fn extract_simple_frame_data(buf: &[u8], prefix: &str) -> Result<usize, RespErro
     }
 
     // 寻找CRLF的位置，即简单字符串的结束位置
-    let end = find_crlf(buf, 1).ok_or(RespError::NotComplete)?;
+    let end = find_crlf(buf, nth_crlf).ok_or(RespError::NotComplete)?;
 
     // 返回找到的结束位置
     Ok(end)
@@ -107,25 +264,36 @@ fn find_crlf(buf: &[u8], nth: usize) -> Option<usize> {
     None
 }
 #[cfg(test)]
-mod tests{
+mod tests {
     use super::*;
     use anyhow::Result;
     use bytes::BufMut;
 
     #[test]
-    fn test_decode_simple_string()->Result<()>{
+    fn test_decode_simple_string() -> Result<()> {
         let mut buf = BytesMut::new();
         buf.extend_from_slice(b"+OK\r\n");
-        let frame : SimpleString= SimpleString::decode(&mut buf)?.into();
+        let frame: SimpleString = SimpleString::decode(&mut buf)?.into();
         assert_eq!(frame, SimpleString::new("OK".to_string()));
         buf.extend_from_slice(b"+hello\r");
         //
         let ret = SimpleString::decode(&mut buf);
-            // println!("{:?}", ret.unwrap_err());
-        assert_eq!(ret.unwrap_err(),RespError::NotComplete);
+        // println!("{:?}", ret.unwrap_err());
+        assert_eq!(ret.unwrap_err(), RespError::NotComplete);
         buf.put_u8(b'\n');
-        let frame : SimpleString= SimpleString::decode(&mut buf)?.into();
+        let frame: SimpleString = SimpleString::decode(&mut buf)?.into();
         assert_eq!(frame, SimpleString::new("hello".to_string()));
+        Ok(())
+    }
+    #[test]
+    fn test_double_decode() -> Result<()> {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(b",123.456\r\n");
+        let frame: f64 = f64::decode(&mut buf)?;
+        assert_eq!(frame, 123.456);
+        buf.extend_from_slice(b",+1.23456e-9\r\n");
+        let frame = f64::decode(&mut buf)?;
+        assert_eq!(frame, 1.23456e-9);
         Ok(())
     }
 }

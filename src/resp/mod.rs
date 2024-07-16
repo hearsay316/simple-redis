@@ -43,7 +43,13 @@ pub enum RespError{
     #[error("Invalid frame length : {0}")]
     InvalidFrameLength(isize),
     #[error("Frame is not complete")]
-    NotComplete
+    NotComplete,
+    #[error("Parse error: {0}")]
+    ParseIntError(#[from] std::num::ParseIntError),
+    #[error("Utf8 error :{0}")]
+    Uft8Error(#[from] std::str::Utf8Error),
+    #[error("Parse float error: {0}")]
+    PareseFloatError(#[from] std::num::ParseFloatError)
 }
 
 
@@ -57,16 +63,23 @@ pub enum RespError{
 pub enum RespFrame {
     SimpleString(SimpleString),
     Error(SimpleError),
+
     Integer(i64),
     BulkString(BulkString),
+
+    NullBulkString(RespNullBulkString),
     Array(RespArray),
+
     Null(RespNull),
     NullArray(RespNullArray),
+
     Boolean(bool),
     Double(f64),
+
     Map(RespMap),
     Set(RespSet),
 }
+
 #[derive(Debug, PartialEq, Eq, PartialOrd)]
 pub struct SimpleString(String);
 #[derive(Debug, PartialEq, Eq, PartialOrd)]
@@ -75,6 +88,8 @@ pub struct SimpleError(String);
 pub struct RespNull;
 #[derive(Debug, PartialEq, Eq, PartialOrd)]
 pub struct RespNullArray;
+#[derive(Debug, PartialEq, Eq, PartialOrd)]
+pub struct RespNullBulkString;
 #[derive(Debug, PartialEq, PartialOrd)]
 pub struct RespArray(Vec<RespFrame>);
 #[derive(Debug, PartialEq, PartialOrd)]
