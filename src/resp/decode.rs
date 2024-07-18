@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
-use crate::{BulkString, RespArray, RespDecode, RespEncode, RespError, RespFrame, RespMap, RespNull, RespNullArray, RespNullBulkString, RespSet, SimpleError, SimpleString};
+
+use crate::{BulkString, RespArray, RespDecode, RespError, RespFrame, RespMap, RespNull, RespNullArray, RespNullBulkString, RespSet, SimpleError, SimpleString};
 use bytes::{Buf, BytesMut};
 
 /*
@@ -25,10 +25,59 @@ impl RespDecode for RespFrame {
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
         let mut iter = buf.iter().peekable();
         match iter.peek() {
-            Some(b'+') => {}
-            _ => {
-                todo!()
+            Some(b'+') => {
+                let frame = SimpleString::decode(buf)?;
+                Ok(frame.into())
             }
+            Some(b'-') => {
+                let frame = SimpleError::decode(buf)?;
+                Ok(frame.into())
+            }
+            Some(b':') => {
+                let frame = i64::decode(buf)?;
+                Ok(frame.into())
+            }
+            Some(b',') => {
+                let frame = f64::decode(buf)?;
+                Ok(frame.into())
+            }
+            Some(b'#') => {
+                let frame = bool::decode(buf)?;
+                Ok(frame.into())
+            }
+            Some(b'$') => {
+                match RespNullBulkString::decode(buf) {
+                    Ok(frame) => Ok(frame.into()),
+                    Err(RespError::NotComplete) => Err(RespError::NotComplete),
+                    Err(_) => {
+                        let frame = BulkString::decode(buf)?;
+                        Ok(frame.into())
+                    }
+                }
+            }
+            Some(b'*') => {
+                match RespNullArray::decode(buf) {
+                    Ok(frame) => Ok(frame.into()),
+                    Err(RespError::NotComplete) => Err(RespError::NotComplete),
+                    Err(_) => {
+                        let frame = RespArray::decode(buf)?;
+                        Ok(frame.into())
+                    }
+                }
+            }
+            Some(b'_') => {
+                let frame = RespNull::decode(buf)?;
+                Ok(frame.into())
+            }
+            Some(b'~') => {
+                let frame = RespSet::decode(buf)?;
+                Ok(frame.into())
+            }
+            Some(b'%') => {
+                let frame = RespMap::decode(buf)?;
+                Ok(frame.into())
+            }
+            _ => Err(RespError::InvalidFrameType(format!("expect_length: unknown frame type: {:?}", buf)))
         }
     }
 }
@@ -84,25 +133,24 @@ impl RespDecode for SimpleError {
 }
 impl RespDecode for RespNull {
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
-        let prefix = "_";
+        // let prefix = "_";
         extract_fixed_data(buf, "_\r\n", "Null")?;
         Ok(RespNull)
     }
 }
 impl RespDecode for RespNullArray {
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
-        let prefix = "*";
+        // let prefix = "*";
         extract_fixed_data(buf, "*-1\r\n", "NullArray")?;
         Ok(RespNullArray)
     }
 }
 impl RespDecode for RespNullBulkString {
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
-        let prefix = "$-1\r\n";
+        // let prefix = "$-1\r\n";
         extract_fixed_data(buf, "$-1\r\n", "NullBulkString")?;
         Ok(RespNullBulkString)
     }
-
 }
 impl RespDecode for bool {
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
@@ -119,9 +167,7 @@ impl RespDecode for bool {
 impl RespDecode for BulkString {
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
         let prefix = "$";
-        let end = extract_simple_frame_data(buf, prefix, 1)?;
-        let s = String::from_utf8_lossy(&buf[prefix.len()..end]);
-        let len = s.parse()?;
+        let (end,len) = parse_length(buf,prefix)?;
         let remained = &buf[end + CRLF_LEN..];
         if remained.len() < len + CRLF_LEN {
             return Err(RespError::NotComplete);
@@ -134,11 +180,15 @@ impl RespDecode for BulkString {
 
 impl RespDecode for RespArray {
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
-        let perfix = "+";
-        let end = extract_simple_frame_data(buf, perfix, 1)?;
-        let s = String::from_utf8_lossy(&buf[perfix.len()..end]);
-        let len = s.parse()?;
-        let mut frames = Vec::with_capactity(len);
+        let prefix = "*";
+        let (end,len) = parse_length(buf,prefix)?;
+        let total_length = calc_total_length(buf,len,prefix)?;
+        if buf.len() < total_length {
+            return Err(RespError::NotComplete);
+        }
+        buf.advance(end+CRLF_LEN);
+        //with_capacity
+        let mut frames = Vec::with_capacity(len);
         for _ in 0..len {
             let frame = RespFrame::decode(buf)?;
             frames.push(frame);
@@ -172,11 +222,14 @@ impl RespDecode for f64 {
 impl RespDecode for RespMap {
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
         let prefix = "%";
-        let end = extract_simple_frame_data(buf, prefix, 1)?;
-        let s = String::from_utf8_lossy(&buf[prefix.len()..end]);
-        let len = s.parse()?;
+        let (end,len) = parse_length(buf,prefix)?;
+        let total_length = calc_total_length(buf,len,prefix)?;
+        if buf.len() < total_length {
+            return Err(RespError::NotComplete);
+        }
+        buf.advance(end+CRLF_LEN);
         let mut frames = RespMap::new();
-        for _ in len {
+        for _ in 0..len {
             let key = SimpleString::decode(buf)?;
             let value = RespFrame::decode(buf)?;
             frames.insert(key.0, value);
@@ -188,17 +241,57 @@ impl RespDecode for RespMap {
 impl RespDecode for RespSet {
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
         let prefix = "~";
-        let end = extract_simple_frame_data(buf, prefix, 1)?;
-        let s = String::from_utf8_lossy(&buf[prefix.len()..end]);
-        let len = s.parse()?;
+        let (end,len) = parse_length(buf,prefix)?;
+        let total_length = calc_total_length(buf,len,prefix)?;
+        if buf.len() < total_length {
+            return Err(RespError::NotComplete);
+        }
+        buf.advance(end+CRLF_LEN);
         let mut frames: Vec<RespFrame> = Vec::with_capacity(len);
-        for _ in len {
+        for _ in 0..len {
             let frame = RespFrame::decode(buf)?;
             frames.push(frame);
         }
         Ok(RespSet::new(frames))
     }
 }
+fn parse_length(buf: &mut BytesMut, prefix: &str) -> Result<(usize,usize), RespError> {
+    let end = extract_simple_frame_data(buf, prefix, 1)?;
+    let s = String::from_utf8_lossy(&buf[prefix.len()..end]);
+    Ok((end,s.parse()?))
+}
+/**
+ * 计算缓冲区中特定前缀消息的总长度。
+ *
+ * 此函数用于处理Redis响应缓冲区，根据不同的前缀指示，计算出一个完整的消息应该到哪里结束。
+ * 主要用于解析Redis的多值回复（*）和模糊匹配回复（~），以及处理特定的键值对回复（%）。
+ *
+ * @param buf 一个可变引用到BytesMut对象，代表当前的缓冲区，用于存放Redis的响应数据。
+ * @param len 当前处理的消息在缓冲区中的起始位置。
+ * @param prefix 当前处理的消息的前缀，用于指示不同类型的回复。
+ * @return 返回一个Result，包含计算出的总长度或者一个错误，如果消息不完整则返回错误。
+ */
+fn calc_total_length(buf: &[u8], len: usize, prefix: &str) -> Result<usize, RespError> {
+    // 从给定的起始位置开始切片，获取当前处理的消息数据。
+    let data = &buf[len+CRLF_LEN..];
+
+    // 根据前缀的不同，采取不同的处理逻辑。
+    match prefix {
+        "*" | "~" => {
+            // 对于多值回复或模糊匹配回复，查找下一个CRLF的位置，以确定当前消息的结束位置。
+            //  find nth CRLF IN  THE buffer 在缓冲区中找到第n个CRLF
+            find_crlf(data, len).map(|end| len+CRLF_LEN+end).ok_or(RespError::NotComplete)
+        }
+        "%" => {
+            // 对于键值对回复，需要找到两个CRLF来确定一个键值对的结束，因此长度计算要考虑到这一点。
+            //  find nth CRLF IN  THE buffer 在缓冲区中找到第n个CRLF
+            // we need to find 2 CRLF for each key-value pair 我们需要为每个键值对找到2个CRLF
+            find_crlf(data, len*2).map(|end| len+CRLF_LEN+end).ok_or(RespError::NotComplete)
+        }
+        _ => Ok(len+CRLF_LEN),
+    }
+}
+
 fn extract_fixed_data(
     buf: &mut BytesMut,
     expect: &str,
@@ -286,6 +379,24 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn test_array_decode() -> Result<()> {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(b"*2\r\n$3\r\nset\r\n$5\r\nhello\r\n");
+
+        let frame = RespArray::decode(&mut buf)?;
+        assert_eq!(frame, RespArray::new([b"set".into(), b"hello".into()]));
+
+        buf.extend_from_slice(b"*2\r\n$3\r\nset\r\n");
+        let ret = RespArray::decode(&mut buf);
+        assert_eq!(ret.unwrap_err(), RespError::NotComplete);
+
+        buf.extend_from_slice(b"$5\r\nhello\r\n");
+        let frame = RespArray::decode(&mut buf)?;
+        assert_eq!(frame, RespArray::new([b"set".into(), b"hello".into()]));
+
+        Ok(())
+    }
+    #[test]
     fn test_double_decode() -> Result<()> {
         let mut buf = BytesMut::new();
         buf.extend_from_slice(b",123.456\r\n");
@@ -294,6 +405,44 @@ mod tests {
         buf.extend_from_slice(b",+1.23456e-9\r\n");
         let frame = f64::decode(&mut buf)?;
         assert_eq!(frame, 1.23456e-9);
+        Ok(())
+    }
+    #[test]
+    fn test_map_decode() -> Result<()> {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(b"%2\r\n+set\r\n$5\r\nhello\r\n+set\r\n$5\r\nhello\r\n");
+        // buf.extend_from_slice(b"%2\r\n+hello\r\n$5\r\nworld\r\n+foo\r\n$3\r\nbar\r\n");
+        //
+        let frame: RespMap = RespMap::decode(&mut buf)?;
+        let mut map = RespMap::new();
+        map.insert("set".to_string(), BulkString::new(b"hello".to_vec()).into());
+        map.insert("set".to_string(), BulkString::new(b"hello".to_vec()).into());
+        assert_eq!(frame, map);
+        Ok(())
+
+        // let mut buf = BytesMut::new();
+        //
+        // let frame = RespMap::decode(&mut buf)?;
+        // let mut map = RespMap::new();
+        // map.insert(
+        //     "hello".to_string(),
+        //     BulkString::new(b"world".to_vec()).into(),
+        // );
+        // map.insert("foo".to_string(), BulkString::new(b"bar".to_vec()).into());
+        // assert_eq!(frame, map);
+        //
+        // Ok(())
+    }
+    #[test]
+    fn test_set_decode() -> Result<()> {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(b"~2\r\n$3\r\nset\r\n$5\r\nhello\r\n");
+        let frame: RespSet = RespSet::decode(&mut buf)?;
+        let  set = RespSet::new(vec![
+            BulkString::new(b"set".to_vec()).into(),
+            BulkString::new(b"hello".to_vec()).into(),
+        ]);
+        assert_eq!(frame, set);
         Ok(())
     }
 }
