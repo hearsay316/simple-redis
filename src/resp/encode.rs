@@ -1,4 +1,4 @@
-use crate::{BulkString, RespArray, RespEncode, RespFrame, RespMap, RespNull, RespNullArray, RespNullBulkString, RespSet, SimpleError, SimpleString};
+use crate::{BulkString, RespArray, RespEncode, RespMap, RespNull, RespNullArray, RespNullBulkString, RespSet, SimpleError, SimpleString};
 
 /*
 - 如何解析 Frame
@@ -140,11 +140,18 @@ impl RespEncode for RespSet {
 }
 #[cfg(test)]
 mod tests {
+    use crate::RespFrame;
     use super::*;
     #[test]
     fn test_simple_string_encode() {
         let frame:RespFrame = SimpleString::new("OK".to_string()).into();
         assert_eq!(frame.encode(), b"+OK\r\n");
+    }
+    #[test]
+    fn test_error_encode(){
+        let frame :RespFrame = SimpleError::new("Error message".to_string()).into();
+        assert_eq!(frame.encode(),b"-Error message\r\n");
+
     }
     #[test]
     fn test_simple_error_encode(){
@@ -218,4 +225,5 @@ mod tests {
         ]).into();
        assert_eq!(frame.encode(),b"~2\r\n+value\r\n$5\r\nworld\r\n");
     }
+
 }

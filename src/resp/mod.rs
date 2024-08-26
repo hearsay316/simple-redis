@@ -31,7 +31,9 @@ pub trait RespEncode {
 }
 
 pub trait RespDecode : Sized {
+    const PREFIX:&'static str;
     fn decode(buf:&mut BytesMut) -> Result<Self,RespError>;
+    fn expect_length(buf:&[u8])->Result<usize,RespError>;
 }
 
 #[derive(Debug,Error,PartialEq, Eq,)]
@@ -49,7 +51,7 @@ pub enum RespError{
     #[error("Utf8 error :{0}")]
     Uft8Error(#[from] std::str::Utf8Error),
     #[error("Parse float error: {0}")]
-    PareseFloatError(#[from] std::num::ParseFloatError)
+    ParseFloatError(#[from] std::num::ParseFloatError)
 }
 
 
@@ -184,11 +186,11 @@ impl From<&str> for SimpleString {
     }
 }
 
-impl From<&str> for RespFrame {
-    fn from(s: &str) -> Self {
-        SimpleString(s.to_string()).into()
-    }
-}
+// impl From<&str> for RespFrame {
+//     fn from(s: &str) -> Self {
+//         SimpleString(s.to_string()).into()
+//     }
+// }
 
 impl From<&str> for SimpleError {
     fn from(s: &str) -> Self {
@@ -208,6 +210,11 @@ impl From<&[u8]> for BulkString {
     }
 }
 
+impl From<Vec<u8>> for BulkString{
+    fn from(value: Vec<u8>) -> Self {
+        BulkString(value)
+    }
+}
 impl From<&[u8]> for RespFrame {
     fn from(s: &[u8]) -> Self {
         BulkString(s.to_vec()).into()
