@@ -48,8 +48,8 @@ pub enum RespError{
     NotComplete,
     #[error("Parse error: {0}")]
     ParseIntError(#[from] std::num::ParseIntError),
-    #[error("Utf8 error :{0}")]
-    Uft8Error(#[from] std::str::Utf8Error),
+    #[error("Utf8 error: {0}")]
+    Utf8Error(#[from] std::string::FromUtf8Error),
     #[error("Parse float error: {0}")]
     ParseFloatError(#[from] std::num::ParseFloatError)
 }

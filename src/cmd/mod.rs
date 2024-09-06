@@ -12,7 +12,10 @@ pub enum CommandError {
     #[error("Invalid argument:{0}")]
     InvalidArgument(String),
     #[error("{0}")]
-    RespError(#[from] RespError)
+    RespError(#[from] RespError),
+
+    #[error("Utf8 error :{0}")]
+    Utf8Error(#[from] std::string::FromUtf8Error),
 }
 pub trait CommandExecutor {
     fn execute(self) -> RespFrame;
@@ -118,6 +121,6 @@ fn validate_command(
     }
     Ok(())
 }
-fn extract_args(value:&RespArray,start:usize)->Result<Vec<&RespFrame>,CommandError>{
-    Ok(value.0.iter().skip(start).collect::<Vec<&RespFrame>>())
+fn extract_args(value:RespArray,start:usize)->Result<Vec<RespFrame>,CommandError>{
+    Ok(value.0.into_iter().skip(start).collect::<Vec<RespFrame>>())
 }
