@@ -73,7 +73,7 @@ mod tests{
     }
 
     #[test]
-    fn test_set_get_comand()->Result<()>{
+    fn test_set_get_command()->Result<()>{
         let backend = Backend::new();
         let cmd = Set{
             key:"hello".to_string(),
