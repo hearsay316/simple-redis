@@ -1,7 +1,18 @@
-use crate::{RespArray, RespFrame};
-use crate::cmd::{extract_args, validate_command, CommandError, Get, Set};
+use crate::{RespArray, RespFrame, RespNull};
+use crate::backend::Backend;
+use crate::cmd::{extract_args, validate_command, CommandError, CommandExecutor, Get, Set, RESP_OK};
 
-
+impl CommandExecutor for Get{
+    fn execute(self, backend: &Backend) -> RespFrame {
+        backend.get(&self.key).unwrap_or_else(|| RespFrame::Null(RespNull))
+    }
+}
+impl CommandExecutor for Set {
+    fn execute(self, backend: &Backend) -> RespFrame {
+        backend.set(self.key,self.value);
+        RESP_OK.clone()
+    }
+}
 impl TryFrom<RespArray> for Get{
         type Error = CommandError;
     fn try_from(value:RespArray)->Result<Self,Self::Error>{
@@ -35,6 +46,8 @@ mod tests{
     use bytes::BytesMut;
     use crate::RespDecode;
     use anyhow::Result;
+    use crate::backend::Backend;
+    use crate::cmd::RESP_OK;
     use super::*;
     #[test]
     fn test_get_try_resp_array()->Result<()>{
@@ -56,6 +69,25 @@ mod tests{
         let result:Set = frame.try_into()?;
         assert_eq!(result.key,"hello");
         assert_eq!(result.value,RespFrame::BulkString(b"world".into()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_get_comand()->Result<()>{
+        let backend = Backend::new();
+        let cmd = Set{
+            key:"hello".to_string(),
+            value:RespFrame::BulkString(b"world".into())
+        };
+        let result = cmd.execute(&backend);
+        assert_eq!(result, RESP_OK.clone());
+
+        let cmd = Get {
+            key: "hello".to_string(),
+        };
+        let result = cmd.execute(&backend);
+        assert_eq!(result, RespFrame::BulkString(b"world".into()));
+
         Ok(())
     }
 }

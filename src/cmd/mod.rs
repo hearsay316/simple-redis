@@ -2,7 +2,12 @@ mod map;
 mod hmap;
 
 use thiserror::Error;
-use crate::{RespArray, RespError, RespFrame};
+use crate::{RespArray, RespError, RespFrame, SimpleString};
+use crate::backend::Backend;
+use lazy_static::lazy_static;
+lazy_static! {
+    static ref RESP_OK:RespFrame = SimpleString::new("OK").into();
+}
 #[derive(Error, Debug)]
 pub enum CommandError {
     #[error("Invalid command:{0}")]
@@ -18,7 +23,7 @@ pub enum CommandError {
     Utf8Error(#[from] std::string::FromUtf8Error),
 }
 pub trait CommandExecutor {
-    fn execute(self) -> RespFrame;
+    fn execute(self,backend:&Backend) -> RespFrame;
 }
 pub enum Command {
     Get(Get),
@@ -53,7 +58,7 @@ pub struct HGet {
 #[derive(Debug)]
 
 pub struct HSet {
-    ket: String,
+    key: String,
     field: String,
     value: RespFrame,
 }

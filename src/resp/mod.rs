@@ -61,7 +61,7 @@ pub enum RespError{
 //     }
 // }
 #[enum_dispatch(RespEncode)]
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug,Clone, PartialEq, PartialOrd)]
 pub enum RespFrame {
     SimpleString( SimpleString),
     Error(SimpleError),
@@ -82,23 +82,23 @@ pub enum RespFrame {
     Set(RespSet),
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd)]
+#[derive(Debug,Clone, PartialEq, Eq, PartialOrd)]
 pub struct SimpleString(pub(crate) String);
-#[derive(Debug, PartialEq, Eq, PartialOrd)]
+#[derive(Debug,Clone, PartialEq, Eq, PartialOrd)]
 pub struct SimpleError(pub(crate) String);
-#[derive(Debug, PartialEq, Eq, PartialOrd)]
+#[derive(Debug,Clone, PartialEq, Eq, PartialOrd)]
 pub struct RespNull;
-#[derive(Debug, PartialEq, Eq, PartialOrd)]
+#[derive(Debug,Clone, PartialEq, Eq, PartialOrd)]
 pub struct RespNullArray;
-#[derive(Debug, PartialEq, Eq, PartialOrd)]
+#[derive(Debug,Clone, PartialEq, Eq, PartialOrd)]
 pub struct RespNullBulkString;
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug,Clone, PartialEq, PartialOrd)]
 pub struct RespArray(pub(crate) Vec<RespFrame>);
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug,Clone, PartialEq, PartialOrd)]
 pub struct BulkString(pub(crate) Vec<u8>);
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug,Clone, PartialEq, PartialOrd)]
 pub struct RespMap(pub(crate) BTreeMap<String, RespFrame>);
-#[derive(Debug, PartialEq,  PartialOrd)]
+#[derive(Debug,Clone, PartialEq,  PartialOrd)]
 pub struct RespSet(pub(crate) Vec<RespFrame>);
 
 impl Deref for SimpleString {
