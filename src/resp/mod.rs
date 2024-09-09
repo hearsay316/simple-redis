@@ -1,11 +1,12 @@
-use std::collections::{BTreeMap};
-use thiserror::Error;
-use bytes::BytesMut;
-use std::ops::{Deref, DerefMut};
-
-use enum_dispatch::enum_dispatch;
-mod encode;
 mod decode;
+mod encode;
+
+use bytes::BytesMut;
+use enum_dispatch::enum_dispatch;
+use std::collections::BTreeMap;
+use std::ops::{Deref, DerefMut};
+use thiserror::Error;
+
 // use encode::*;
 // use decode::*;
 /*
@@ -30,75 +31,67 @@ pub trait RespEncode {
     fn encode(self) -> Vec<u8>;
 }
 
-pub trait RespDecode : Sized {
-    const PREFIX:&'static str;
-    fn decode(buf:&mut BytesMut) -> Result<Self,RespError>;
-    fn expect_length(buf:&[u8])->Result<usize,RespError>;
+pub trait RespDecode: Sized {
+    const PREFIX: &'static str;
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError>;
+    fn expect_length(buf: &[u8]) -> Result<usize, RespError>;
 }
 
-#[derive(Debug,Error,PartialEq, Eq,)]
-pub enum RespError{
-    #[error("Invalid frame : {0}")]
+#[derive(Error, Debug, PartialEq, Eq, )]
+pub enum RespError {
+    #[error("Invalid frame: {0}")]
     InvalidFrame(String),
-    #[error("invalid Frame Type: {0}")]
+    #[error("Invalid frame type: {0}")]
     InvalidFrameType(String),
-    #[error("Invalid frame length : {0}")]
+    #[error("Invalid frame length： {0}")]
     InvalidFrameLength(isize),
     #[error("Frame is not complete")]
     NotComplete,
+
     #[error("Parse error: {0}")]
     ParseIntError(#[from] std::num::ParseIntError),
     #[error("Utf8 error: {0}")]
     Utf8Error(#[from] std::string::FromUtf8Error),
     #[error("Parse float error: {0}")]
-    ParseFloatError(#[from] std::num::ParseFloatError)
+    ParseFloatError(#[from] std::num::ParseFloatError),
 }
 
-
-// impl RespDecode for BytesMut {
-//     fn decode(buf:&mut  BytesMut) -> Result<Self, RespError> {
-//         todo!()
-//     }
-// }
 #[enum_dispatch(RespEncode)]
-#[derive(Debug,Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum RespFrame {
-    SimpleString( SimpleString),
+    SimpleString(SimpleString),
     Error(SimpleError),
-
     Integer(i64),
     BulkString(BulkString),
-
     NullBulkString(RespNullBulkString),
     Array(RespArray),
-
-    Null(RespNull),
     NullArray(RespNullArray),
+    Null(RespNull),
 
     Boolean(bool),
     Double(f64),
-
     Map(RespMap),
     Set(RespSet),
 }
 
-#[derive(Debug,Clone, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct SimpleString(pub(crate) String);
-#[derive(Debug,Clone, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct SimpleError(pub(crate) String);
-#[derive(Debug,Clone, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct RespNull;
-#[derive(Debug,Clone, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct RespNullArray;
-#[derive(Debug,Clone, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct RespNullBulkString;
-#[derive(Debug,Clone, PartialEq, PartialOrd)]
-pub struct RespArray(pub(crate) Vec<RespFrame>);
-#[derive(Debug,Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq,Eq, PartialOrd)]
 pub struct BulkString(pub(crate) Vec<u8>);
-#[derive(Debug,Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct RespArray(pub(crate) Vec<RespFrame>);
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct RespMap(pub(crate) BTreeMap<String, RespFrame>);
-#[derive(Debug,Clone, PartialEq,  PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct RespSet(pub(crate) Vec<RespFrame>);
 
 impl Deref for SimpleString {
@@ -173,12 +166,17 @@ impl RespMap {
         RespMap(BTreeMap::new())
     }
 }
+impl Default for RespMap {
+    fn default() -> Self {
+        RespMap::new()
+    }
+}
 impl RespSet {
     pub fn new(s: impl Into<Vec<RespFrame>>) -> Self {
         RespSet(s.into())
     }
 }
-impl RespNull { pub fn new() -> Self { RespNull } }
+ impl RespNull { pub fn new() -> Self { RespNull } }
 
 impl From<&str> for SimpleString {
     fn from(s: &str) -> Self {
@@ -210,11 +208,6 @@ impl From<&[u8]> for BulkString {
     }
 }
 
-impl From<Vec<u8>> for BulkString{
-    fn from(value: Vec<u8>) -> Self {
-        BulkString(value)
-    }
-}
 impl From<&[u8]> for RespFrame {
     fn from(s: &[u8]) -> Self {
         BulkString(s.to_vec()).into()

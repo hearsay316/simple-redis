@@ -10,8 +10,8 @@ pub struct Backend(Arc<BackendInner>);
 
 #[derive(Debug)]
 pub struct BackendInner{
-    map:DashMap<String,RespFrame>,
-    hmap:DashMap<String,DashMap<String,RespFrame>>
+    pub(crate) map:DashMap<String,RespFrame>,
+    pub(crate) hmap:DashMap<String,DashMap<String,RespFrame>>
 }
 impl Deref for Backend{
     type Target = BackendInner;

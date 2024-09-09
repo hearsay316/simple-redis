@@ -19,11 +19,6 @@ use crate::{BulkString, RespArray, RespEncode, RespMap, RespNull, RespNullArray,
  */
 const BUF_CAP: usize = 4096;
 
-// impl RespEncode for RespFrame {
-//     fn encode(self) -> Vec<u8> {
-//         todo!()
-//     }
-// }
 
 //- simple string:"+OK\r\n"
 impl RespEncode for SimpleString {
