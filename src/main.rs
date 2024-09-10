@@ -2,11 +2,12 @@
 use anyhow::Result;
 use tokio::net::TcpListener;
 use tracing::{info, warn};
-use simple_redis::{network, Backend};
+use simple_redis::{network, Backend, };
 
 #[tokio::main]
 async fn main()->Result<()> {
     tracing_subscriber::fmt::init();
+
     info!("运行开始啦 ");
     let addr = "0.0.0.0:6379";
     println!("开始了");

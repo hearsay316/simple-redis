@@ -1,5 +1,7 @@
 use std::ops::Deref;
-use crate::RespFrame;
+use bytes::{Buf, BytesMut};
+
+use super::{RespDecode, RespEncode, RespError, RespFrame, calc_total_length, parse_length, CRLF_LEN, BUF_CAP};
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct RespSet(pub(crate) Vec<RespFrame>);
@@ -9,9 +11,73 @@ impl RespSet {
         RespSet(s.into())
     }
 }
+
+// "~<number-of-elements>\r\n<element-1>...<element-n>"
+impl RespEncode for RespSet {
+    fn encode(self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(BUF_CAP);
+        buf.extend_from_slice(&format!("~{}\r\n", self.len()).into_bytes());
+        for frame in self.0 {
+            buf.extend_from_slice(&frame.encode())
+        }
+        buf
+    }
+}
+
+// set: "~<number-of-elements>\r\n<element-1>...<element-n>"
+impl RespDecode for RespSet {
+    const PREFIX: &'static str = "~";
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let (end, len) = parse_length(buf, Self::PREFIX)?;
+        let total_length = calc_total_length(buf,end, len, Self::PREFIX)?;
+        if buf.len() < total_length {
+            return Err(RespError::NotComplete);
+        }
+        buf.advance(end + CRLF_LEN);
+        let mut frames: Vec<RespFrame> = Vec::with_capacity(len);
+        for _ in 0..len {
+            let frame = RespFrame::decode(buf)?;
+            frames.push(frame);
+        }
+        Ok(RespSet::new(frames))
+    }
+    fn expect_length(buf: &[u8]) -> Result<usize, RespError> {
+        let (end, len) = parse_length(buf, Self::PREFIX)?;
+        calc_total_length(buf,end,len,Self::PREFIX)
+    }
+}
 impl Deref for RespSet {
     type Target = Vec<RespFrame>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::{BulkString, SimpleString};
+    use super::*;
+    use anyhow::Result;
+    #[test]
+    fn test_set_encode(){
+        let  frame: RespSet = RespSet::new([
+            SimpleString::new("value".to_string()).into(),
+            BulkString::new("world".to_string()).into()
+        ]).into();
+        assert_eq!(frame.encode(),b"~2\r\n+value\r\n$5\r\nworld\r\n");
+    }
+    #[test]
+    fn test_set_decode() -> Result<()> {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(b"~2\r\n$3\r\nset\r\n$5\r\nhello\r\n");
+        let frame: RespSet = RespSet::decode(&mut buf)?;
+        let set = RespSet::new(vec![
+            BulkString::new(b"set".to_vec()).into(),
+            BulkString::new(b"hello".to_vec()).into(),
+        ]);
+        assert_eq!(frame, set);
+        Ok(())
+    }
+
 }
